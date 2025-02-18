@@ -2,17 +2,14 @@
 
 namespace Drewlabs\Changelog;
 
+use Exception;
+
 class Logger implements LogDriver
 {
-
-    /**
-     * @var static
-     */
+    /**  @var static */
     private static $instance;
 
-    /**
-     * @var array<string,\Closure():LogDriver>
-     */
+    /**  @var array<string,\Closure():LogDriver> */
     private $drivers = [];
 
     /**
@@ -20,14 +17,14 @@ class Logger implements LogDriver
      * 
      * @return void 
      */
-    private function __construct()
-    {
-    }
+    private function __construct() {}
 
-    public function logChange(string $table, string $instance, string $property, $previous, $actual, string $logBy = null)
+    public function logChange(string $table, string $instance, string $property, $previous, $actual, ?string $logBy = null)
     {
         foreach ($this->drivers as $factory) {
-            call_user_func($factory, $this)->logChange($table, $instance, $property, $previous, $actual, $logBy);
+            $this->tryCatch(function () use ($factory, $table, $instance, $property, $previous, $actual, $logBy) {
+                return call_user_func($factory, $this)->logChange($table, $instance, $property, $previous, $actual, $logBy);
+            }, [Exception::class]);
         }
     }
 
@@ -62,7 +59,7 @@ class Logger implements LogDriver
      * 
      * @return void 
      */
-    public function registerDriver($driver, string $name = null)
+    public function registerDriver($driver, ?string $name = null)
     {
         $driver = is_callable($driver) ? $driver : function () use ($driver) {
             return $driver;
@@ -74,5 +71,18 @@ class Logger implements LogDriver
         }
 
         $this->drivers[$name] = $driver;
+    }
+
+    private function tryCatch(\Closure $callback, array $exceptions = [], $returns = null)
+    {
+        try {
+            return call_user_func($callback);
+        } catch (\Throwable $e) {
+            if (!empty($exceptions) && (is_subclass_of($e, Exception::class) || in_array(get_class($e), $exceptions))) {
+                return is_callable($returns) ? call_user_func($returns, $e) : $returns;
+            }
+
+            throw $e;
+        }
     }
 }
